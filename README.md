@@ -1,5 +1,25 @@
 # Skrub
 
+## Fixed: host stuck on Lobby while others were already in-game
+
+If you saw the host's screen stuck on "Waiting to start" while other players
+had already moved into the drawing screen, that was a missed-broadcast bug:
+the server started the game correctly, but a WebSocket hiccup (common on
+Render's free tier and on mobile networks switching wifi/cellular) meant the
+host's browser never received the `phase-change` event telling it to move
+on, and nothing forced a re-check. This is now fixed with three changes:
+
+1. Faster dead-connection detection (`pingInterval`/`pingTimeout` lowered),
+   so Socket.io notices and reconnects a silently-dead socket sooner.
+2. The client now pulls a fresh state snapshot from the server every 4
+   seconds and immediately when the tab/app returns to the foreground, so
+   a missed broadcast self-heals within a few seconds instead of leaving
+   you stuck until you leave and rejoin.
+3. "Start Game" and "Play Again" now report *why* they failed (wrong host,
+   not enough players, game already in progress) instead of silently doing
+   nothing, so it's obvious when a click genuinely didn't work versus when
+   it worked but the screen hadn't caught up yet.
+
 Real-time multiplayer drawing & guessing game. Vanilla HTML5 Canvas + CSS +
 JS on the frontend, Node/Express + Socket.io on the backend, zero database
 (all state lives in-memory per room on the server).

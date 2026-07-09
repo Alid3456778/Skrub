@@ -10,8 +10,14 @@ const app = express();
 const server = http.createServer(app);
 const io = new Server(server, {
   cors: { origin: '*' },
-  pingInterval: 10000,
-  pingTimeout: 15000
+  // Faster dead-connection detection than the defaults: on a flaky mobile
+  // connection or a Render free-tier hiccup, a socket can go silently dead
+  // for a while before Socket.io notices and reconnects it - during that
+  // window, broadcasts (phase-change, room-update) are lost. Shorter
+  // intervals mean the client reconnects and re-syncs sooner instead of
+  // being stuck showing a stale screen.
+  pingInterval: 6000,
+  pingTimeout: 8000
 });
 
 const roomManager = new RoomManager(io);
@@ -80,6 +86,19 @@ io.on('connection', (socket) => {
     }
   });
 
+  // Cheap self-heal: the client can call this any time (periodically, on tab
+  // refocus, etc.) to pull a fresh snapshot in case a broadcast was missed
+  // during a silent connection hiccup, without needing a full disconnect/
+  // reconnect cycle to be detected first.
+  socket.on('request-state', () => {
+    const room = currentRoom();
+    if (!room || !socket.data.clientId) return;
+    socket.emit('sync-state', room.getSyncPayload(socket.data.clientId));
+    if (room.phase === 'WORD_SELECT' && room.currentDrawerId === socket.data.clientId) {
+      socket.emit('word-options', { options: room.wordOptions });
+    }
+  });
+
   function joinRoomSocket(room, clientId, name, avatar) {
     const existing = room.players.get(clientId);
     let player;
@@ -107,12 +126,20 @@ io.on('connection', (socket) => {
 
   socket.on('start-game', () => {
     const room = currentRoom();
-    if (room) room.startGame(socket.data.clientId);
+    if (!room) return;
+    const result = room.startGame(socket.data.clientId);
+    if (!result.ok) {
+      socket.emit('action-error', { message: result.reason });
+    }
   });
 
   socket.on('play-again', () => {
     const room = currentRoom();
-    if (room) room.playAgain(socket.data.clientId);
+    if (!room) return;
+    const result = room.playAgain(socket.data.clientId);
+    if (!result.ok) {
+      socket.emit('action-error', { message: result.reason });
+    }
   });
 
   socket.on('select-word', ({ word }) => {

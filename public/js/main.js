@@ -84,6 +84,25 @@ socket.on('connect', () => {
   }
 });
 
+// Belt-and-suspenders self-heal: a socket can go silently unresponsive for a
+// few seconds (mobile network switching, Render free-tier hiccups) without
+// Socket.io firing a full disconnect/reconnect right away, which can leave a
+// client showing a stale screen (e.g. stuck on the Lobby after the host
+// already started the game). Periodically pulling a fresh snapshot fixes
+// that within a few seconds without waiting on connection-state detection.
+setInterval(() => {
+  if (socket.connected && currentRoomId) socket.emit('request-state');
+}, 4000);
+
+// Also resync immediately whenever the tab/app comes back to the foreground
+// - mobile browsers throttle background timers and can drop queued socket
+// messages while backgrounded.
+document.addEventListener('visibilitychange', () => {
+  if (document.visibilityState === 'visible' && socket.connected && currentRoomId) {
+    socket.emit('request-state');
+  }
+});
+
 socket.on('disconnect', () => {
   wakeBanner.textContent = 'Connection lost — attempting to reconnect…';
   wakeBanner.classList.remove('hidden');
@@ -279,6 +298,15 @@ function pushSettings() {
 $('btn-start-game').addEventListener('click', () => socket.emit('start-game'));
 $('btn-copy-code').addEventListener('click', () => {
   navigator.clipboard?.writeText(currentRoomId || '');
+});
+
+socket.on('action-error', ({ message }) => {
+  const el = $('lobby-action-error');
+  if (el) {
+    el.textContent = message;
+    el.classList.remove('hidden');
+    setTimeout(() => el.classList.add('hidden'), 4000);
+  }
 });
 
 function renderLobby(state) {

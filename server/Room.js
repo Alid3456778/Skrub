@@ -149,16 +149,16 @@ class Room {
   // ---------- Game flow ----------
 
   startGame(clientId) {
-    if (clientId !== this.hostId) return false;
-    if (this.phase !== PHASES.LOBBY) return false;
-    if (this.activePlayers().length < 2) return false;
+    if (clientId !== this.hostId) return { ok: false, reason: 'Only the host can start the game.' };
+    if (this.phase !== PHASES.LOBBY) return { ok: false, reason: 'The game has already started.' };
+    if (this.activePlayers().length < 2) return { ok: false, reason: 'Need at least 2 players to start.' };
 
     this.roundNum = 1;
     this.turnIndex = -1;
     this.players.forEach(p => { p.score = 0; p.hasDrawnThisGame = false; p.isSpectator = false; });
     this.drawOrder = this.activePlayers().map(p => p.id);
     this._advanceTurn();
-    return true;
+    return { ok: true };
   }
 
   _advanceTurn() {
@@ -430,8 +430,8 @@ class Room {
   }
 
   playAgain(clientId) {
-    if (clientId !== this.hostId) return false;
-    if (this.phase !== PHASES.PODIUM) return false;
+    if (clientId !== this.hostId) return { ok: false, reason: 'Only the host can restart the game.' };
+    if (this.phase !== PHASES.PODIUM) return { ok: false, reason: 'The game is still in progress.' };
     this._clearAllTimers();
     this.phase = PHASES.LOBBY;
     this.roundNum = 0;
@@ -442,7 +442,7 @@ class Room {
     this.players.forEach(p => { p.score = 0; p.isSpectator = false; p.hasDrawnThisGame = false; });
     this.broadcastRoomUpdate();
     this.io.to(this.id).emit('phase-change', { phase: this.phase });
-    return true;
+    return { ok: true };
   }
 
   // ---------- Utility ----------
