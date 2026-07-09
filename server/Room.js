@@ -245,7 +245,8 @@ class Room {
       drawerId: this.currentDrawerId,
       mask: this._buildMaskPayload(),
       phaseEndTime: this.phaseEndTime,
-      wordLength: word.length
+      wordLength: word.length,
+      lounge: [this.currentDrawerId, ...this.correctGuesserIds]
     });
 
     const drawer = this.players.get(this.currentDrawerId);

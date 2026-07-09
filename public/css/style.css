@@ -117,6 +117,17 @@ textarea { min-height: 60px; resize: vertical; }
 
 /* Lobby */
 .lobby-card { max-width: 560px; }
+.lobby-header { display: flex; align-items: center; justify-content: space-between; gap: 8px; }
+.lobby-header h2 { margin: 0; }
+.btn-leave { background: var(--bad); color: #2a0d0d; font-weight: 700; flex-shrink: 0; }
+.btn-leave:hover { background: #ff8a8a; }
+.voice-setup { display: flex; align-items: center; gap: 8px; margin: 12px 0; }
+.voice-status {
+  font-size: 1.1rem; opacity: 0.4; flex-shrink: 0; cursor: default;
+  transition: opacity 0.2s ease;
+}
+.voice-status.active { opacity: 1; }
+.voice-status.speaking-blocked { filter: grayscale(1); opacity: 0.5; }
 .settings-panel { background: var(--bg); padding: 16px; border-radius: 10px; margin-bottom: 16px; }
 .player-list { list-style: none; padding: 0; margin: 0; }
 .player-list li {

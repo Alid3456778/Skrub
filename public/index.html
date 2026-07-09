@@ -63,7 +63,15 @@
 <!-- LOBBY -->
 <section id="screen-lobby" class="screen hidden">
   <div class="card lobby-card">
-    <h2>Room <span id="lobby-room-code"></span> <button id="btn-copy-code" class="btn-mini">Copy</button></h2>
+    <div class="lobby-header">
+      <h2>Room <span id="lobby-room-code"></span> <button id="btn-copy-code" class="btn-mini">Copy</button></h2>
+      <button id="btn-leave-lobby" class="btn-mini btn-leave">Leave Room</button>
+    </div>
+
+    <div class="voice-setup">
+      <button id="btn-enable-voice" class="btn-mini">🎤 Enable Voice Chat</button>
+      <span id="voice-setup-status" class="muted"></span>
+    </div>
 
     <div id="lobby-settings" class="settings-panel hidden">
       <h3>Room settings (host only)</h3>
@@ -95,8 +103,10 @@
   <div class="game-layout">
     <div class="game-top-bar">
       <div id="ping-indicator" class="ping-dot" title="Connection quality"></div>
+      <div id="voice-status" class="voice-status" title="Voice chat status">🎤</div>
       <div class="round-info">Round <span id="game-round-num">1</span>/<span id="game-total-rounds">3</span></div>
       <div id="word-display" class="word-display"></div>
+      <button id="btn-leave-game" class="btn-mini btn-leave">Leave</button>
       <div class="timer-wrap"><div id="timer-bar-fill" class="timer-bar-fill"></div></div>
     </div>
 
@@ -141,6 +151,7 @@
     <ol id="podium-list" class="podium-list"></ol>
     <button id="btn-play-again" class="btn btn-primary hidden">Play Again</button>
     <p id="podium-wait-msg" class="muted hidden">Waiting for the host to restart…</p>
+    <button id="btn-leave-podium" class="btn btn-leave">Leave Room</button>
   </div>
 </section>
 

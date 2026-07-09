@@ -100,6 +100,61 @@ socket.on('join-error', ({ message }) => {
 startPingIndicator(socket, $('ping-indicator'));
 const voice = new VoiceMesh(socket, clientId);
 
+const voiceStatusEl = $('voice-status');
+const voiceSetupBtn = $('btn-enable-voice');
+const voiceSetupStatus = $('voice-setup-status');
+
+function updateVoiceStatusUI(status) {
+  voiceStatusEl.classList.remove('active', 'speaking-blocked');
+  switch (status) {
+    case 'off':
+      voiceStatusEl.textContent = '🎤';
+      voiceStatusEl.title = 'Voice chat off';
+      voiceSetupBtn.textContent = '🎤 Enable Voice Chat';
+      voiceSetupBtn.disabled = false;
+      break;
+    case 'open':
+      voiceStatusEl.textContent = '🔊';
+      voiceStatusEl.classList.add('active');
+      voiceStatusEl.title = 'Voice chat: everyone can talk';
+      break;
+    case 'blocked':
+      voiceStatusEl.textContent = '🔇';
+      voiceStatusEl.classList.add('active', 'speaking-blocked');
+      voiceStatusEl.title = "You're muted while guessing";
+      break;
+    case 'lounge':
+      voiceStatusEl.textContent = '🎙️';
+      voiceStatusEl.classList.add('active');
+      voiceStatusEl.title = "Winners' lounge: talking with the artist and other winners";
+      break;
+  }
+}
+voice.onStatusChange = updateVoiceStatusUI;
+updateVoiceStatusUI('off');
+
+voiceSetupBtn.addEventListener('click', async () => {
+  voiceSetupBtn.disabled = true;
+  voiceSetupStatus.textContent = 'Requesting microphone…';
+  const ok = await voice.enable();
+  if (!ok) {
+    voiceSetupStatus.textContent = 'Microphone permission denied.';
+    voiceSetupBtn.disabled = false;
+    return;
+  }
+  voiceSetupStatus.textContent = 'Voice chat on';
+  voiceSetupBtn.classList.add('hidden');
+  connectVoiceToRoomPeers();
+  updateVoiceStatusUI(roomState && roomState.phase === 'DRAWING' ? 'blocked' : 'open');
+});
+
+function connectVoiceToRoomPeers() {
+  if (!voice.enabled || !roomState) return;
+  roomState.players.forEach(p => {
+    if (p.id !== clientId && p.connected) voice.connectTo(p.id);
+  });
+}
+
 // ---------- Home actions ----------
 $('btn-quick-play').addEventListener('click', () => {
   if (!requireName()) return;
@@ -123,10 +178,29 @@ socket.on('joined-room', ({ roomId }) => {
   localStorage.setItem('skrub_roomId', roomId);
 });
 
+function leaveRoom() {
+  socket.emit('leave-room');
+  currentRoomId = null;
+  localStorage.removeItem('skrub_roomId');
+  roomState = null;
+  clearInterval(timerInterval);
+  hideAllOverlays();
+  canvas.clear();
+  voice.disconnectAll();
+  updateVoiceStatusUI('off');
+  $('chat-log').innerHTML = '';
+  $('home-error').classList.add('hidden');
+  showScreen('home');
+}
+$('btn-leave-lobby').addEventListener('click', leaveRoom);
+$('btn-leave-game').addEventListener('click', leaveRoom);
+$('btn-leave-podium').addEventListener('click', leaveRoom);
+
 // ---------- Room state ----------
 socket.on('room-update', (state) => {
   roomState = state;
   renderRoomByPhase(state);
+  connectVoiceToRoomPeers();
 });
 
 socket.on('sync-state', (payload) => {
@@ -272,6 +346,7 @@ function startTimerBar(endTime, totalMs) {
 socket.on('phase-change', (data) => {
   hideAllOverlays();
   const isDrawer = data.drawerId === clientId;
+  voice.updateGameState(data.phase, data.lounge);
 
   if (data.phase === 'WORD_SELECT') {
     canvas.clear();

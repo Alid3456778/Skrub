@@ -25,25 +25,52 @@ JS on the frontend, Node/Express + Socket.io on the backend, zero database
   Socket.io session id) lets a dropped player rebind to their seat, resume
   the round timer, and get the canvas replayed — server holds the seat for
   30s.
+- **Leave Room**: a "Leave" button in the lobby/game/podium screens lets a
+  player exit immediately (no 30s grace period — that's only for accidental
+  disconnects) and return to the home screen to join or create another room.
+  If the leaving player was the host, the room migrates host to the next
+  player automatically; if they were mid-turn as the artist, the turn is
+  skipped to the next player.
 - Spectator mode for players who join mid-round; they're promoted into the
   active pool at the start of the next round.
 - Host migration if the room owner disconnects.
 - Live ping indicator (🟢/🟡/🔴) via a heartbeat round-trip.
 - Responsive layout: canvas stacks above chat on portrait/mobile, side-by-side
   on wider viewports.
+- **WebRTC mesh voice chat is now active** (`public/js/voice.js`), with the
+  server-enforced muting routine from the spec:
+  - Lobby / word-select / turn-review: open channel, everyone can hear
+    everyone.
+  - Drawing phase: the artist and all guessers start muted (their outgoing
+    audio track is swapped to `null` per-peer-connection, not just
+    disabled locally, so it's enforced at the WebRTC layer). The moment a
+    guesser answers correctly, the server broadcasts an updated "lounge"
+    list (`[artistId, ...correctGuesserIds]`) and each lounge member's
+    client selectively re-enables its outgoing track *only* toward other
+    lounge members — so the artist and winners can talk privately without
+    leaking to players still guessing.
+  - Players opt in via an "Enable Voice Chat" button (mic permission
+    requires a user gesture in every browser, so this can't be automatic).
+  A small icon in the game top bar shows the current state (🔊 open / 🔇
+  muted-while-guessing / 🎙️ in the winners' lounge).
 
-## What's scaffolded but OFF by default
+## Voice chat notes / what to verify yourself
 
-**WebRTC mesh voice chat** (`public/js/voice.js`). The signaling relay exists
-server-side (`voice-signal` event) and the client has a full `VoiceMesh`
-class with mute logic hooks and ICE-restart reconnection — but
-`VOICE_ENABLED = false`, so no microphone permission is requested and no
-peer connections open. This was a deliberate scope call: WebRTC mesh audio
-is the highest-risk part of the original spec (needs a TURN server for
-reliable NAT traversal, which Render's free tier doesn't provide) and adds a
-lot of surface area for bugs. Flip the flag once the core game is confirmed
-stable in production, and add a TURN provider (see comment in `voice.js`) —
-otherwise some players simply won't hear each other on stricter networks.
+I can't test real microphone/WebRTC audio from this sandboxed environment —
+there's no browser with mic access here. The signaling, peer-connection
+lifecycle, and the mute-routing logic (`_canSendTo` in `voice.js`) are
+implemented and reviewed carefully, but **please test with 2+ real browser
+tabs/devices before relying on it**, specifically:
+
+1. Two tabs on the same wifi network — should just work with STUN alone.
+2. One device on wifi + one on mobile data — this is the case most likely to
+   fail without a TURN server (see the comment block at the top of
+   `voice.js` for where to add one; a few providers have free tiers).
+3. Confirm the artist can't be heard by guessers but *can* be heard by
+   players who already guessed correctly, and that muted guessers truly
+   produce no audio to anyone (open each tab's devtools console — there are
+   no visual indicators for remote peers beyond the status icon, so audio
+   bugs are easiest to catch by ear with real people testing).
 
 ## Running locally
 
@@ -117,12 +144,11 @@ test/sim.js              Headless 3-player game simulation for regression testin
 
 ## Suggested next steps
 
-1. Deploy Phase 1 as-is and play a few real rounds across different networks
-   to confirm stability before adding anything else.
-2. Enable voice chat (`VOICE_ENABLED = true` in `voice.js`) once you've
-   picked a TURN provider, and test it with players on different networks
-   (e.g. one on wifi, one on mobile data) since that's exactly the case
-   STUN-only can fail.
+1. Test voice chat with real people on different networks (see "Voice chat
+   notes" above) before treating it as production-ready.
+2. Add a TURN provider's credentials to `voice.js` if you find players on
+   stricter networks (corporate wifi, some mobile carriers) can't hear each
+   other — that's the STUN-only NAT traversal limitation, not a code bug.
 3. If a room needs to survive a Render restart, you'd need to add real
    persistence (e.g. Render's free Postgres or Redis) — that's a deliberate
    trade-off against the "zero database" requirement in the spec, so only do

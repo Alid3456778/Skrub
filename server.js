@@ -140,6 +140,15 @@ io.on('connection', (socket) => {
     if (room) room.handleChatMessage(socket.data.clientId, text);
   });
 
+  socket.on('leave-room', () => {
+    const room = currentRoom();
+    if (room && socket.data.clientId) {
+      socket.leave(room.id);
+      room.removePlayerPermanently(socket.data.clientId);
+    }
+    socket.data.roomId = null;
+  });
+
   // --- Latency heartbeat (drives the client's ping indicator) ---
   socket.on('heartbeat', (ts) => {
     socket.emit('heartbeat-ack', ts);

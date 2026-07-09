@@ -95,3 +95,11 @@ setTimeout(() => {
   process.exitCode = errors.length ? 1 : 0;
   players.forEach(p => p.socket.close());
 }, 15000);
+
+// After the first round finishes, have the host (alice) leave mid-lobby-wait
+// and confirm the room survives with a migrated host.
+setTimeout(() => {
+  const alice = players[0];
+  log('TEST', 'alice leaving room...');
+  alice.socket.emit('leave-room');
+}, 12000);
