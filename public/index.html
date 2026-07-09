@@ -1,0 +1,150 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1, user-scalable=no">
+<title>Skrub</title>
+<link rel="stylesheet" href="/css/style.css">
+</head>
+<body>
+
+<div id="server-wake-banner" class="wake-banner hidden">Waking up the server, this can take up to a minute on first load…</div>
+
+<!-- HOME -->
+<section id="screen-home" class="screen">
+  <div class="card">
+    <h1 class="logo">Skrub</h1>
+    <label>Your name
+      <input id="input-name" maxlength="20" placeholder="Enter a name">
+    </label>
+
+    <div class="avatar-picker">
+      <div id="avatar-preview" class="avatar-preview"></div>
+      <div class="avatar-controls">
+        <label>Color
+          <select id="avatar-color">
+            <option value="#ff5c5c">Red</option>
+            <option value="#5c9dff">Blue</option>
+            <option value="#5cff8f">Green</option>
+            <option value="#ffdd5c">Yellow</option>
+            <option value="#c95cff">Purple</option>
+            <option value="#ff9c5c">Orange</option>
+          </select>
+        </label>
+        <label>Eyes
+          <select id="avatar-eyes">
+            <option value="round">Round</option>
+            <option value="sleepy">Sleepy</option>
+            <option value="wide">Wide</option>
+          </select>
+        </label>
+        <label>Mouth
+          <select id="avatar-mouth">
+            <option value="smile">Smile</option>
+            <option value="flat">Flat</option>
+            <option value="open">Open</option>
+          </select>
+        </label>
+      </div>
+    </div>
+
+    <div class="home-actions">
+      <button id="btn-quick-play" class="btn btn-primary">Quick Play</button>
+      <button id="btn-create-room" class="btn">Create Private Room</button>
+      <div class="join-row">
+        <input id="input-room-code" placeholder="Room code" maxlength="12">
+        <button id="btn-join-room" class="btn">Join</button>
+      </div>
+    </div>
+    <p id="home-error" class="error-text hidden"></p>
+  </div>
+</section>
+
+<!-- LOBBY -->
+<section id="screen-lobby" class="screen hidden">
+  <div class="card lobby-card">
+    <h2>Room <span id="lobby-room-code"></span> <button id="btn-copy-code" class="btn-mini">Copy</button></h2>
+
+    <div id="lobby-settings" class="settings-panel hidden">
+      <h3>Room settings (host only)</h3>
+      <label>Rounds: <span id="rounds-val"></span>
+        <input type="range" id="setting-rounds" min="2" max="10" step="1">
+      </label>
+      <label>Draw time (sec): <span id="draw-time-val"></span>
+        <input type="range" id="setting-draw-time" min="30" max="180" step="5">
+      </label>
+      <label>Word mode
+        <select id="setting-word-mode">
+          <option value="Standard">Standard</option>
+          <option value="Hidden">Hidden</option>
+          <option value="Custom">Custom</option>
+        </select>
+      </label>
+      <textarea id="setting-custom-words" placeholder="cat, dog, banana, ..." class="hidden"></textarea>
+      <button id="btn-start-game" class="btn btn-primary">Start Game</button>
+    </div>
+    <p id="lobby-wait-msg" class="muted">Waiting for the host to start the game…</p>
+
+    <h3>Players (<span id="lobby-player-count">0</span>)</h3>
+    <ul id="lobby-player-list" class="player-list"></ul>
+  </div>
+</section>
+
+<!-- GAME -->
+<section id="screen-game" class="screen hidden">
+  <div class="game-layout">
+    <div class="game-top-bar">
+      <div id="ping-indicator" class="ping-dot" title="Connection quality"></div>
+      <div class="round-info">Round <span id="game-round-num">1</span>/<span id="game-total-rounds">3</span></div>
+      <div id="word-display" class="word-display"></div>
+      <div class="timer-wrap"><div id="timer-bar-fill" class="timer-bar-fill"></div></div>
+    </div>
+
+    <div class="game-main">
+      <div class="canvas-panel">
+        <div id="word-select-overlay" class="overlay hidden">
+          <h3>Choose a word to draw</h3>
+          <div id="word-options" class="word-options"></div>
+        </div>
+        <div id="waiting-overlay" class="overlay hidden">
+          <p id="waiting-text">Waiting for the artist to choose a word…</p>
+        </div>
+        <div id="review-overlay" class="overlay hidden">
+          <h3>The word was: <span id="review-word"></span></h3>
+          <ul id="review-scores" class="review-scores"></ul>
+        </div>
+        <canvas id="draw-canvas" width="800" height="600"></canvas>
+        <div id="toolbar" class="toolbar hidden">
+          <div id="palette" class="palette"></div>
+          <input type="range" id="brush-size" min="2" max="40" value="6">
+          <button id="btn-undo" class="btn-mini">Undo</button>
+          <button id="btn-clear" class="btn-mini">Clear</button>
+        </div>
+      </div>
+
+      <div class="side-panel">
+        <ul id="game-player-list" class="player-list compact"></ul>
+        <div id="chat-log" class="chat-log"></div>
+        <form id="chat-form" class="chat-form">
+          <input id="chat-input" placeholder="Type your guess…" autocomplete="off">
+          <button type="submit" class="btn-mini">Send</button>
+        </form>
+      </div>
+    </div>
+  </div>
+</section>
+
+<!-- PODIUM -->
+<section id="screen-podium" class="screen hidden">
+  <div class="card">
+    <h2>Final Results</h2>
+    <ol id="podium-list" class="podium-list"></ol>
+    <button id="btn-play-again" class="btn btn-primary hidden">Play Again</button>
+    <p id="podium-wait-msg" class="muted hidden">Waiting for the host to restart…</p>
+  </div>
+</section>
+
+<script src="/socket.io/socket.io.js"></script>
+<script type="module" src="/js/main.js"></script>
+</body>
+</html>
