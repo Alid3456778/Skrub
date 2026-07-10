@@ -233,7 +233,7 @@ export class VoiceMesh {
   updateGameState(phase, lounge) {
     this._phase = phase;
     if (phase === 'DRAWING') {
-      this._lounge = lounge || [];
+      this._lounge = lounge == null ? this._lounge || [] : lounge;
     } else {
       this._lounge = null;
     }

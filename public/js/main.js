@@ -242,7 +242,7 @@ $('btn-leave-podium').addEventListener('click', leaveRoom);
 socket.on('room-update', (state) => {
   roomState = state;
   renderRoomByPhase(state);
-  voice.updateGameState(state.phase);
+  voice.updateGameState(state.phase, state.lounge);
   connectVoiceToRoomPeers();
 });
 
@@ -251,7 +251,7 @@ socket.on('sync-state', (payload) => {
   if (payload.state) {
     roomState = payload.state;
     renderRoomByPhase(payload.state);
-    voice.updateGameState(payload.state.phase);
+    voice.updateGameState(payload.state.phase, payload.state.lounge);
   }
   // A reconnect resets the server's voiceEnabled flag for us even though our
   // WebRTC mesh is unaffected by a socket reconnect - re-announce it so

@@ -26,6 +26,7 @@ class Room {
     this.wordOptions = [];
     this.revealedIndices = new Set();
     this.correctGuesserIds = new Set();
+    this.voiceLounge = null;
     this.strokes = []; // { strokeId, points: [...], color, size }
     this.phaseEndTime = null;
 
@@ -211,13 +212,15 @@ class Room {
 
     const drawer = this.players.get(this.currentDrawerId);
 
+    this.voiceLounge = [this.currentDrawerId, ...this.correctGuesserIds];
     this.io.to(this.id).emit('phase-change', {
       phase: this.phase,
       drawerId: this.currentDrawerId,
       drawerName: drawer ? drawer.name : '???',
       roundNum: this.roundNum,
       totalRounds: this.settings.rounds,
-      phaseEndTime: this.phaseEndTime
+      phaseEndTime: this.phaseEndTime,
+      lounge: this.voiceLounge
     });
 
     if (drawer && drawer.socketId) {
@@ -382,7 +385,9 @@ class Room {
     });
 
     // Bridge into winner's audio lounge (scaffolded, no-op unless voice is enabled client-side)
-    this.io.to(this.id).emit('voice-lounge-update', { lounge: [this.currentDrawerId, ...this.correctGuesserIds] });
+    this.voiceLounge = [this.currentDrawerId, ...this.correctGuesserIds];
+    this.io.to(this.id).emit('voice-lounge-update', { lounge: this.voiceLounge });
+    this.broadcastRoomUpdate();
 
     const guessers = this.activePlayers().filter(p => p.id !== this.currentDrawerId);
     const allGuessed = guessers.length > 0 && guessers.every(p => this.correctGuesserIds.has(p.id) || !p.connected);
@@ -397,6 +402,7 @@ class Room {
   _startReviewPhase() {
     this._clearAllTimers();
     this.phase = PHASES.REVIEW;
+    this.voiceLounge = null;
     this.phaseEndTime = Date.now() + REVIEW_TIME_MS;
 
     const drawer = this.players.get(this.currentDrawerId);
@@ -438,6 +444,7 @@ class Room {
     if (this.phase !== PHASES.PODIUM) return { ok: false, reason: 'The game is still in progress.' };
     this._clearAllTimers();
     this.phase = PHASES.LOBBY;
+    this.voiceLounge = null;
     this.roundNum = 0;
     this.turnIndex = -1;
     this.currentDrawerId = null;
@@ -475,6 +482,7 @@ class Room {
       isPublic: this.isPublic,
       hostId: this.hostId,
       phase: this.phase,
+      lounge: this.phase === PHASES.DRAWING ? this.voiceLounge : null,
       settings: this.settings,
       roundNum: this.roundNum,
       currentDrawerId: this.currentDrawerId,

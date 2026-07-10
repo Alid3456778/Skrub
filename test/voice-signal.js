@@ -10,6 +10,8 @@ const bobSocket = io(URL, { transports: ['websocket'], reconnection: false });
 let roomId;
 let passed = 0;
 let failed = 0;
+let timeoutId = null;
+let finished = false;
 
 function report(result, desc) {
   console.log(`${result ? 'PASS' : 'FAIL'}: ${desc}`);
@@ -70,6 +72,9 @@ bobSocket.on('room-update', (state) => {
 });
 
 function cleanup() {
+  if (finished) return;
+  finished = true;
+  if (timeoutId) clearTimeout(timeoutId);
   if (aliceSocket.connected) aliceSocket.close();
   if (bobSocket.connected) bobSocket.close();
   setTimeout(() => {
@@ -78,7 +83,7 @@ function cleanup() {
   }, 100);
 }
 
-setTimeout(() => {
+timeoutId = setTimeout(() => {
   report(false, 'Voice signal relay test timed out');
   cleanup();
 }, 5000);
