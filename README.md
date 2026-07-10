@@ -1,5 +1,71 @@
 # Skrub
 
+## Fixed: voice chat not working (waiting room + winners' lounge)
+
+Three real issues, now fixed:
+
+1. **No TURN server was actually configured** (just a comment telling you to
+   add one). Two players on different networks — e.g. one on home wifi, one
+   on mobile data — very often can't establish a direct P2P audio connection
+   with STUN alone; the signaling succeeds but the actual audio never
+   connects. This is almost certainly why voice wasn't working at all,
+   regardless of phase. Added the Open Relay Project's public demo TURN
+   server (free, no signup) as a real fallback. It's a shared demo server
+   with no uptime guarantee — fine for testing and small groups, but get
+   your own free-tier TURN credentials (metered.ca, Twilio, Cloudflare
+   Calls) before relying on this for a lot of concurrent players; swap them
+   into `ICE_SERVERS` in `voice.js`.
+2. **Blocked autoplay had no real retry.** Some browsers (mobile especially)
+   block `audio.play()` even after a user gesture if the `<audio>` element
+   was created moments later rather than synchronously inside the click
+   handler — which is exactly how a WebRTC `ontrack` event fires. It now
+   retries on the next tap/click/keypress anywhere on the page instead of
+   just giving up.
+3. **No way to see who has voice on.** If the artist (or the player you're
+   trying to talk to) never clicked "Enable Voice Chat," there was nothing
+   indicating that — it just looked broken. Player lists (lobby and in-game)
+   now show a 🎤 next to anyone who has voice chat enabled, so you can tell
+   at a glance whether "nobody can hear them" means a bug or means they
+   haven't turned their mic on.
+
+I can't test actual microphone audio from this environment (no browser with
+mic access), so I traced the mute-routing logic manually and verified the
+signaling/state-propagation over the wire against the server, but please
+re-test with real devices — the 🎤 indicator should make it much easier to
+tell if it's still an ICE/TURN issue (icon shows on, but still silent) versus
+someone simply not having enabled it.
+
+Real-time multiplayer drawing & guessing game. Vanilla HTML5 Canvas + CSS +
+JS on the frontend, Node/Express + Socket.io on the backend, zero database
+(all state lives in-memory per room on the server).
+
+## Fixed: voice chat not working in the lobby or the winners' lounge
+
+Root cause: whoever clicked "Enable Voice Chat" *first* would try to open a
+WebRTC connection to a peer who hadn't clicked it yet. That peer's client was
+set up to ignore incoming connection attempts until it had enabled its own
+mic, so the attempt was silently dropped - and the code never retried, so
+that pair of players stayed disconnected for the rest of the game. Since the
+winners' lounge audio reuses the same peer connections established earlier,
+any pair that failed to connect in the lobby also couldn't talk in the
+lounge later. (An interim fix had tried gating connections on a server-side
+"voice enabled" flag per player, but that flag got silently reset on every
+reconnect - including the more frequent reconnects our earlier stability fix
+introduced - so it could get permanently stuck off for a player. That gate
+has been removed.) Fixed by:
+
+1. A client now always accepts and answers an incoming connection attempt,
+   even before it has enabled its own mic (it just won't send audio back
+   until the local player also clicks Enable) - this removes the drop entirely.
+2. When a player enables voice, their track is retroactively added to any
+   connection that was already open receive-only, and it renegotiates so
+   the other side starts hearing them.
+3. A periodic retry sweep rebuilds any connection that's stuck or dead, so
+   even an unrelated network hiccup self-heals within a few seconds, without
+   depending on any server-side flag that could get out of sync.
+4. Voice can now also be enabled from the in-game status icon, not just the
+   lobby button, for anyone who joins after the round starts.
+
 ## Fixed: host stuck on Lobby while others were already in-game
 
 If you saw the host's screen stuck on "Waiting to start" while other players
@@ -19,10 +85,6 @@ on, and nothing forced a re-check. This is now fixed with three changes:
    not enough players, game already in progress) instead of silently doing
    nothing, so it's obvious when a click genuinely didn't work versus when
    it worked but the screen hadn't caught up yet.
-
-Real-time multiplayer drawing & guessing game. Vanilla HTML5 Canvas + CSS +
-JS on the frontend, Node/Express + Socket.io on the backend, zero database
-(all state lives in-memory per room on the server).
 
 ## What's implemented (Phase 1 — core game, stability-first)
 

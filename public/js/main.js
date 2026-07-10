@@ -163,6 +163,7 @@ voiceSetupBtn.addEventListener('click', async () => {
   }
   voiceSetupStatus.textContent = 'Voice chat on';
   voiceSetupBtn.classList.add('hidden');
+  socket.emit('voice-enabled');
   connectVoiceToRoomPeers();
   updateVoiceStatusUI(roomState && roomState.phase === 'DRAWING' ? 'blocked' : 'open');
 });
@@ -173,6 +174,26 @@ function connectVoiceToRoomPeers() {
     if (p.id !== clientId && p.connected) voice.connectTo(p.id);
   });
 }
+
+// Periodic retry: connectTo() is safe to call repeatedly (it only rebuilds
+// connections that are stuck or dead), so this catches any peer connection
+// that failed to establish - e.g. two players clicking "Enable Voice Chat"
+// at different times, or a brief reconnect resetting server-side state.
+setInterval(connectVoiceToRoomPeers, 6000);
+
+// Let a player enable voice from the in-game status icon too, not just the
+// lobby button - useful if they joined after the round started or skipped
+// enabling it earlier.
+voiceStatusEl.addEventListener('click', async () => {
+  if (voice.enabled) return;
+  voiceSetupStatus.textContent = 'Requesting microphone…';
+  const ok = await voice.enable();
+  if (ok) {
+    socket.emit('voice-enabled');
+    voiceSetupBtn.classList.add('hidden');
+    connectVoiceToRoomPeers();
+  }
+});
 
 // ---------- Home actions ----------
 $('btn-quick-play').addEventListener('click', () => {
@@ -227,6 +248,13 @@ socket.on('sync-state', (payload) => {
   if (payload.state) {
     roomState = payload.state;
     renderRoomByPhase(payload.state);
+  }
+  // A reconnect resets the server's voiceEnabled flag for us even though our
+  // WebRTC mesh is unaffected by a socket reconnect - re-announce it so
+  // other players' peer connections keep working after a network blip.
+  if (voice.enabled) {
+    socket.emit('voice-enabled');
+    connectVoiceToRoomPeers();
   }
   if (payload.strokes && payload.strokes.length) {
     canvas.replayStrokes(payload.strokes);
@@ -327,7 +355,8 @@ function renderLobby(state) {
   state.players.forEach(p => {
     const li = document.createElement('li');
     li.innerHTML = `<span class="dot ${p.id === state.hostId ? 'host' : ''}"></span>
-      <span class="name ${p.connected ? '' : 'offline'}">${escapeHtml(p.name)}${p.id === clientId ? ' (you)' : ''}</span>`;
+      <span class="name ${p.connected ? '' : 'offline'}">${escapeHtml(p.name)}${p.id === clientId ? ' (you)' : ''}</span>
+      <span class="mic-indicator" title="${p.voiceEnabled ? 'Voice chat on' : 'Voice chat off'}">${p.voiceEnabled ? '🎤' : ''}</span>`;
     list.appendChild(li);
   });
 }
@@ -497,6 +526,7 @@ function renderGamePlayerList(state) {
     const tag = p.id === state.currentDrawerId ? ' ✏️' : (p.isSpectator ? ' (spectating)' : '');
     li.innerHTML = `<span class="dot ${p.id === state.hostId ? 'host' : ''}"></span>
       <span class="name ${p.connected ? '' : 'offline'}">${escapeHtml(p.name)}${tag}</span>
+      <span class="mic-indicator" title="${p.voiceEnabled ? 'Voice chat on' : 'Voice chat off'}">${p.voiceEnabled ? '🎤' : ''}</span>
       <span class="score">${p.score}</span>`;
     list.appendChild(li);
   });

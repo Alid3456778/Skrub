@@ -51,7 +51,8 @@ class Room {
       score: 0,
       connected: true,
       isSpectator: isMidRound, // joins mid-round are spectators until next turn
-      hasDrawnThisGame: false
+      hasDrawnThisGame: false,
+      voiceEnabled: false
     };
     this.players.set(clientId, player);
 
@@ -65,6 +66,9 @@ class Room {
     if (!player) return null;
     player.socketId = newSocketId;
     player.connected = true;
+    // Any prior WebRTC mesh state is gone after a page reload; the client
+    // will re-broadcast 'voice-enabled' if/when it turns its mic back on.
+    player.voiceEnabled = false;
     const t = this.disconnectTimers.get(clientId);
     if (t) { clearTimeout(t); this.disconnectTimers.delete(clientId); }
     return player;
@@ -454,6 +458,13 @@ class Room {
     this.hintTimers = [];
   }
 
+  setVoiceEnabled(clientId, enabled) {
+    const player = this.players.get(clientId);
+    if (!player) return;
+    player.voiceEnabled = !!enabled;
+    this.broadcastRoomUpdate();
+  }
+
   broadcastRoomUpdate() {
     this.io.to(this.id).emit('room-update', this.getPublicState());
   }
@@ -470,7 +481,7 @@ class Room {
       phaseEndTime: this.phaseEndTime,
       players: [...this.players.values()].map(p => ({
         id: p.id, name: p.name, avatar: p.avatar, score: p.score,
-        connected: p.connected, isSpectator: p.isSpectator
+        connected: p.connected, isSpectator: p.isSpectator, voiceEnabled: !!p.voiceEnabled
       }))
     };
   }

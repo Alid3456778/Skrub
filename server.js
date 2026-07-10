@@ -181,7 +181,12 @@ io.on('connection', (socket) => {
     socket.emit('heartbeat-ack', ts);
   });
 
-  // --- WebRTC signaling relay (scaffolded; inert until client enables voice) ---
+  // --- WebRTC signaling relay ---
+  socket.on('voice-enabled', () => {
+    const room = currentRoom();
+    if (room && socket.data.clientId) room.setVoiceEnabled(socket.data.clientId, true);
+  });
+
   socket.on('voice-signal', ({ toClientId, signal }) => {
     const room = currentRoom();
     if (!room) return;

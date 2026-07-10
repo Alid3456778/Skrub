@@ -139,6 +139,7 @@ textarea { min-height: 60px; resize: vertical; }
 .player-list .dot.host { background: var(--warn); }
 .player-list .name { flex: 1; }
 .player-list .score { color: var(--muted); font-size: 0.85rem; }
+.player-list .mic-indicator { font-size: 0.8rem; opacity: 0.85; }
 .player-list .offline { opacity: 0.4; }
 .player-list.compact li { padding: 6px; font-size: 0.85rem; }
 
