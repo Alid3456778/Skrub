@@ -125,6 +125,8 @@ const voiceSetupStatus = $('voice-setup-status');
 
 function updateVoiceStatusUI(status) {
   voiceStatusEl.classList.remove('active', 'speaking-blocked');
+  voiceSetupBtn.classList.toggle('hidden', status !== 'off');
+  voiceSetupStatus.textContent = '';
   switch (status) {
     case 'off':
       voiceStatusEl.textContent = '🎤';
@@ -240,6 +242,7 @@ $('btn-leave-podium').addEventListener('click', leaveRoom);
 socket.on('room-update', (state) => {
   roomState = state;
   renderRoomByPhase(state);
+  voice.updateGameState(state.phase);
   connectVoiceToRoomPeers();
 });
 
@@ -248,6 +251,7 @@ socket.on('sync-state', (payload) => {
   if (payload.state) {
     roomState = payload.state;
     renderRoomByPhase(payload.state);
+    voice.updateGameState(payload.state.phase);
   }
   // A reconnect resets the server's voiceEnabled flag for us even though our
   // WebRTC mesh is unaffected by a socket reconnect - re-announce it so
@@ -341,7 +345,11 @@ function renderLobby(state) {
   $('lobby-room-code').textContent = state.isPublic ? 'Public match' : state.roomId;
   const isHost = state.hostId === clientId;
   $('lobby-settings').classList.toggle('hidden', !isHost || state.isPublic);
-  $('lobby-wait-msg').classList.toggle('hidden', isHost && !state.isPublic);
+  $('lobby-host-controls').classList.toggle('hidden', !isHost);
+  $('host-start-hint').classList.toggle('hidden', !(isHost && state.players.length < 2));
+  $('host-start-hint').textContent = state.players.length < 2 ? 'Need one more player to start the game…' : '';
+  $('btn-start-game').disabled = state.players.length < 2;
+  $('lobby-wait-msg').classList.toggle('hidden', isHost);
 
   $('setting-rounds').value = state.settings.rounds;
   $('rounds-val').textContent = state.settings.rounds;

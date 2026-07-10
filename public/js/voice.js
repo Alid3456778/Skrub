@@ -119,6 +119,9 @@ export class VoiceMesh {
         audioEl = document.createElement('audio');
         audioEl.id = `voice-audio-${peerClientId}`;
         audioEl.autoplay = true;
+        audioEl.playsInline = true;
+        audioEl.setAttribute('playsinline', '');
+        audioEl.muted = false;
         document.body.appendChild(audioEl);
       }
       audioEl.srcObject = e.streams[0];

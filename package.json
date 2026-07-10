@@ -5,7 +5,10 @@
   "main": "server.js",
   "scripts": {
     "start": "node server.js",
-    "dev": "node server.js"
+    "dev": "node server.js",
+    "test:sim": "node test/sim.js",
+    "test:voice": "node test/voice-signal.js",
+    "test:quickplay": "node test/quick-play.js"
   },
   "engines": {
     "node": ">=18.0.0"
