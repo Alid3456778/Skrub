@@ -3,7 +3,10 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1, user-scalable=no">
-<title>Skrub</title>
+<title>Skrub — draw &amp; guess</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Baloo+2:wght@500;700;800&family=Nunito:wght@400;600;700;800&display=swap" rel="stylesheet">
 <link rel="stylesheet" href="/css/style.css">
 </head>
 <body>
@@ -12,40 +15,23 @@
 
 <!-- HOME -->
 <section id="screen-home" class="screen">
-  <div class="card">
-    <h1 class="logo">Skrub</h1>
+  <div class="card home-card">
+    <h1 class="logo">Skrub<span class="logo-pencil" aria-hidden="true">✏️</span></h1>
+    <p class="tagline">Draw it. Guess it. Laugh about it.</p>
     <label>Your name
       <input id="input-name" maxlength="20" placeholder="Enter a name">
     </label>
 
     <div class="avatar-picker">
-      <div id="avatar-preview" class="avatar-preview"></div>
-      <div class="avatar-controls">
-        <label>Color
-          <select id="avatar-color">
-            <option value="#ff5c5c">Red</option>
-            <option value="#5c9dff">Blue</option>
-            <option value="#5cff8f">Green</option>
-            <option value="#ffdd5c">Yellow</option>
-            <option value="#c95cff">Purple</option>
-            <option value="#ff9c5c">Orange</option>
-          </select>
-        </label>
-        <label>Eyes
-          <select id="avatar-eyes">
-            <option value="round">Round</option>
-            <option value="sleepy">Sleepy</option>
-            <option value="wide">Wide</option>
-          </select>
-        </label>
-        <label>Mouth
-          <select id="avatar-mouth">
-            <option value="smile">Smile</option>
-            <option value="flat">Flat</option>
-            <option value="open">Open</option>
-          </select>
-        </label>
+      <span class="avatar-picker-label">Pick your look</span>
+      <div class="avatar-stage">
+        <button id="avatar-prev" class="avatar-arrow" type="button" aria-label="Previous look">&#10094;</button>
+        <div id="avatar-preview" class="avatar-preview"></div>
+        <button id="avatar-next" class="avatar-arrow" type="button" aria-label="Next look">&#10095;</button>
       </div>
+      <button id="avatar-dice" class="avatar-dice" type="button" aria-label="Surprise me">
+        <span aria-hidden="true">🎲</span> Surprise me
+      </button>
     </div>
 
     <div class="home-actions">

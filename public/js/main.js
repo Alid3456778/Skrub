@@ -1,6 +1,7 @@
 import { DrawingCanvas, PALETTE } from './canvas.js';
 import { startPingIndicator } from './ping.js';
 import { VoiceMesh } from './voice.js';
+import { avatarSVG, defaultAvatar, randomAvatar, nearestComboIndex, comboByIndex, COMBO_COUNT } from './avatar.js';
 
 const WORD_SELECT_TOTAL_MS = 15000;
 const REVIEW_TOTAL_MS = 7000;
@@ -18,7 +19,7 @@ let clientId = localStorage.getItem('skrub_clientId');
 if (!clientId) { clientId = uuid(); localStorage.setItem('skrub_clientId', clientId); }
 
 let profile = JSON.parse(localStorage.getItem('skrub_profile') || '{}');
-profile = { name: profile.name || '', avatar: profile.avatar || { color: '#ff5c5c', eyes: 'round', mouth: 'smile' } };
+profile = { name: profile.name || '', avatar: profile.avatar && profile.avatar.eyes ? profile.avatar : defaultAvatar() };
 
 function saveProfile() { localStorage.setItem('skrub_profile', JSON.stringify(profile)); }
 
@@ -32,24 +33,26 @@ function showScreen(name) {
   screens[name].classList.remove('hidden');
 }
 
-// ---------- Avatar preview ----------
-function renderAvatarPreview(el, avatar) {
-  el.style.background = avatar.color;
-  el.textContent = avatar.eyes === 'wide' ? 'O O' : (avatar.eyes === 'sleepy' ? '- -' : '• •');
+// ---------- Avatar preview (skribbl-style cycle-through picker) ----------
+let avatarIndex = nearestComboIndex(profile.avatar);
+
+function applyAvatar(index) {
+  avatarIndex = ((index % COMBO_COUNT) + COMBO_COUNT) % COMBO_COUNT;
+  profile.avatar = comboByIndex(avatarIndex);
+  $('avatar-preview').innerHTML = avatarSVG(profile.avatar);
+  saveProfile();
 }
 
 $('input-name').value = profile.name;
-$('avatar-color').value = profile.avatar.color;
-$('avatar-eyes').value = profile.avatar.eyes;
-$('avatar-mouth').value = profile.avatar.mouth;
-renderAvatarPreview($('avatar-preview'), profile.avatar);
+applyAvatar(avatarIndex);
 
-['avatar-color', 'avatar-eyes', 'avatar-mouth'].forEach(id => {
-  $(id).addEventListener('change', () => {
-    profile.avatar = { color: $('avatar-color').value, eyes: $('avatar-eyes').value, mouth: $('avatar-mouth').value };
-    renderAvatarPreview($('avatar-preview'), profile.avatar);
-    saveProfile();
-  });
+$('avatar-prev').addEventListener('click', () => applyAvatar(avatarIndex - 1));
+$('avatar-next').addEventListener('click', () => applyAvatar(avatarIndex + 1));
+$('avatar-dice').addEventListener('click', () => {
+  profile.avatar = randomAvatar();
+  avatarIndex = nearestComboIndex(profile.avatar);
+  $('avatar-preview').innerHTML = avatarSVG(profile.avatar);
+  saveProfile();
 });
 $('input-name').addEventListener('input', () => { profile.name = $('input-name').value.trim(); saveProfile(); });
 
@@ -362,7 +365,7 @@ function renderLobby(state) {
   list.innerHTML = '';
   state.players.forEach(p => {
     const li = document.createElement('li');
-    li.innerHTML = `<span class="dot ${p.id === state.hostId ? 'host' : ''}"></span>
+    li.innerHTML = `<span class="avatar-chip ${p.id === state.hostId ? 'host' : ''}">${avatarSVG(p.avatar)}</span>
       <span class="name ${p.connected ? '' : 'offline'}">${escapeHtml(p.name)}${p.id === clientId ? ' (you)' : ''}</span>
       <span class="mic-indicator" title="${p.voiceEnabled ? 'Voice chat on' : 'Voice chat off'}">${p.voiceEnabled ? '🎤' : ''}</span>`;
     list.appendChild(li);
@@ -484,7 +487,14 @@ socket.on('hint-update', ({ mask }) => updateWordDisplay(mask));
 
 function updateWordDisplay(mask) {
   if (!mask) return;
-  $('word-display').textContent = mask.join(' ');
+  const el = $('word-display');
+  el.innerHTML = '';
+  mask.forEach(ch => {
+    const tile = document.createElement('span');
+    tile.className = 'letter-tile' + (ch === '_' ? ' blank' : '');
+    tile.textContent = ch === '_' ? '' : ch;
+    el.appendChild(tile);
+  });
 }
 
 function hideAllOverlays() {
@@ -532,7 +542,7 @@ function renderGamePlayerList(state) {
   state.players.forEach(p => {
     const li = document.createElement('li');
     const tag = p.id === state.currentDrawerId ? ' ✏️' : (p.isSpectator ? ' (spectating)' : '');
-    li.innerHTML = `<span class="dot ${p.id === state.hostId ? 'host' : ''}"></span>
+    li.innerHTML = `<span class="avatar-chip ${p.id === state.hostId ? 'host' : ''}">${avatarSVG(p.avatar)}</span>
       <span class="name ${p.connected ? '' : 'offline'}">${escapeHtml(p.name)}${tag}</span>
       <span class="mic-indicator" title="${p.voiceEnabled ? 'Voice chat on' : 'Voice chat off'}">${p.voiceEnabled ? '🎤' : ''}</span>
       <span class="score">${p.score}</span>`;
@@ -547,9 +557,14 @@ function renderPodium(state) {
 function renderPodiumFromPhaseChange(data) {
   const list = $('podium-list');
   list.innerHTML = '';
+  const medals = ['🥇', '🥈', '🥉'];
   (data.podium || []).forEach((p, i) => {
     const li = document.createElement('li');
-    li.textContent = `#${i + 1} ${p.name} — ${p.score} pts`;
+    li.className = `podium-rank-${i + 1}`;
+    li.innerHTML = `<span class="podium-medal">${medals[i] || `#${i + 1}`}</span>
+      <span class="avatar-chip">${avatarSVG(p.avatar)}</span>
+      <span class="name">${escapeHtml(p.name)}</span>
+      <span class="score">${p.score} pts</span>`;
     list.appendChild(li);
   });
   const isHost = roomState && roomState.hostId === clientId;
