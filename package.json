@@ -9,7 +9,8 @@
     "test:sim": "node test/sim.js",
     "test:voice": "node test/voice-signal.js",
     "test:quickplay": "node test/quick-play.js",
-    "test:lounge": "node test/lounge-state.js"
+    "test:lounge": "node test/lounge-state.js",
+    "test:voice-cycle": "node test/voice-full-cycle.js"
   },
   "engines": {
     "node": ">=18.0.0"
