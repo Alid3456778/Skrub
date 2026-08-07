@@ -7,19 +7,66 @@
 // connection (ICE) never completes. A TURN server relays the audio when a
 // direct P2P path can't be found, which fixes this.
 //
-// The entries below use the Open Relay Project's public demo TURN server
-// (openrelay.metered.ca) - free, no signup, fine for testing and small
-// groups. It's a shared public server with no uptime guarantee, so for a
-// real deployment you should get your own free-tier TURN credentials (e.g.
-// from metered.ca, Twilio, or Cloudflare Calls) and swap them in here.
-const ICE_SERVERS = [
+// ICE servers (STUN + TURN) are fetched from our own server at
+// /api/turn-credentials rather than hardcoded here, so the TURN provider's
+// API key never ships in client JS. See server/turnCredentials.js for the
+// provider (Metered.ca free tier) and its fallback chain.
+//
+// EFFICIENCY: cached in localStorage alongside the server's expiresAt, so a
+// returning player (same tab reload, or a new game a few minutes later)
+// reuses last time's credentials with ZERO network requests at all - not
+// even to our own /api/turn-credentials - until they're actually close to
+// expiring. Only then do we ask the server (which itself only asks Metered
+// when *its* cache is expiring - see turnCredentials.js). Net effect: the
+// real Metered API gets called roughly once per cache window, total, no
+// matter how many players or page loads happen in that window.
+const LOCAL_CACHE_KEY = 'skrub_ice_servers_v1';
+const EXPIRY_SAFETY_MARGIN_MS = 5 * 60 * 1000; // don't start a connection on creds expiring within 5 min
+
+const FALLBACK_ICE_SERVERS = [
   { urls: 'stun:stun.l.google.com:19302' },
-  { urls: 'stun:stun1.l.google.com:19302' },
-  { urls: 'stun:openrelay.metered.ca:80' },
-  { urls: 'turn:openrelay.metered.ca:80', username: 'openrelayproject', credential: 'openrelayproject' },
-  { urls: 'turn:openrelay.metered.ca:443', username: 'openrelayproject', credential: 'openrelayproject' },
-  { urls: 'turn:openrelay.metered.ca:443?transport=tcp', username: 'openrelayproject', credential: 'openrelayproject' }
+  { urls: 'stun:stun1.l.google.com:19302' }
 ];
+
+function readLocalIceCache() {
+  try {
+    const raw = localStorage.getItem(LOCAL_CACHE_KEY);
+    if (!raw) return null;
+    const parsed = JSON.parse(raw);
+    if (!Array.isArray(parsed.iceServers) || !parsed.iceServers.length) return null;
+    if (!parsed.expiresAt || Date.now() > parsed.expiresAt - EXPIRY_SAFETY_MARGIN_MS) return null; // expired or expiring soon
+    return parsed.iceServers;
+  } catch (e) {
+    return null; // corrupt/unavailable localStorage - just refetch
+  }
+}
+
+function writeLocalIceCache(iceServers, expiresAt) {
+  try {
+    localStorage.setItem(LOCAL_CACHE_KEY, JSON.stringify({ iceServers, expiresAt }));
+  } catch (e) { /* localStorage full/unavailable (e.g. private browsing) - non-fatal, just skip caching */ }
+}
+
+let iceServersPromise = null;
+function getIceServers() {
+  const cached = readLocalIceCache();
+  if (cached) return Promise.resolve(cached);
+
+  if (!iceServersPromise) {
+    iceServersPromise = fetch('/api/turn-credentials')
+      .then(r => r.json())
+      .then(data => {
+        const servers = (Array.isArray(data.iceServers) && data.iceServers.length) ? data.iceServers : FALLBACK_ICE_SERVERS;
+        if (data.expiresAt) writeLocalIceCache(servers, data.expiresAt);
+        return servers;
+      })
+      .catch(err => {
+        console.warn('[voice] Could not fetch TURN credentials, using STUN-only fallback (will fail across strict NATs):', err.message);
+        return FALLBACK_ICE_SERVERS;
+      });
+  }
+  return iceServersPromise;
+}
 
 // How long a connection can sit unconnected before we consider it stuck and
 // worth tearing down + retrying from scratch.
@@ -36,6 +83,7 @@ export class VoiceMesh {
     this.localStream = null;
     this.enabled = false;
     this.onStatusChange = null; // (status: 'off'|'open'|'blocked'|'lounge') => void
+    this.onPeerStateChange = null; // (peerClientId, iceConnectionState, candidateType|null) => void
 
     this._lounge = null; // null = open channel (lobby/review), array = drawing-phase lounge members
     this._phase = 'LOBBY';
@@ -51,6 +99,11 @@ export class VoiceMesh {
   async enable() {
     if (this.enabled) return true;
     try {
+      // Kick off the TURN credential fetch in parallel with the mic
+      // permission prompt (it's not needed until the first peer connection
+      // opens, but starting it now means it's usually already resolved by
+      // then instead of adding latency to that first connection).
+      getIceServers();
       this.localStream = await navigator.mediaDevices.getUserMedia({ audio: true });
       this.enabled = true;
       // Any connection that was opened receive-only (because a peer offered
@@ -92,10 +145,12 @@ export class VoiceMesh {
     this.senders.delete(peerClientId);
     this.createdAt.delete(peerClientId);
     this.pendingCandidates.delete(peerClientId);
+    if (this.onPeerStateChange) this.onPeerStateChange(peerClientId, 'closed', null);
   }
 
   async _openConnection(peerClientId, isInitiator) {
-    const pc = new RTCPeerConnection({ iceServers: ICE_SERVERS });
+    const iceServers = await getIceServers();
+    const pc = new RTCPeerConnection({ iceServers });
     this.peers.set(peerClientId, pc);
     this.createdAt.set(peerClientId, Date.now());
 
@@ -130,10 +185,12 @@ export class VoiceMesh {
 
     // Robust reconnection: renegotiate if ICE drops due to a network hop change.
     pc.oniceconnectionstatechange = () => {
+      this._reportPeerState(peerClientId, pc);
       if (pc.iceConnectionState === 'disconnected' || pc.iceConnectionState === 'failed') {
         this._renegotiate(peerClientId, pc, { iceRestart: true });
       }
     };
+    this._reportPeerState(peerClientId, pc);
 
     if (isInitiator) {
       const offer = await pc.createOffer();
@@ -144,9 +201,32 @@ export class VoiceMesh {
     this._applyMuteRulesToPeer(peerClientId);
   }
 
-  // Called after enable() succeeds, to attach our track to any connection
-  // that was opened receive-only (we answered someone's offer before we had
-  // a microphone) and to renegotiate so the other side starts receiving us.
+  // Reports each peer's live ICE connection state (connecting/connected/
+  // failed/etc) via console + an optional UI callback, so "is voice actually
+  // reachable between these two players" is answerable by looking at the
+  // screen instead of guessing. When connected, also inspects getStats() to
+  // report whether the media path is a direct P2P link or relayed through
+  // TURN - useful for diagnosing "works on same wifi, fails across networks".
+  async _reportPeerState(peerClientId, pc) {
+    const state = pc.iceConnectionState;
+    console.log(`[voice] ${peerClientId}: ${state}`);
+    let candidateType = null;
+    if (state === 'connected' || state === 'completed') {
+      try {
+        const stats = await pc.getStats();
+        stats.forEach(report => {
+          if (report.type === 'candidate-pair' && report.state === 'succeeded' && report.nominated !== false) {
+            const local = stats.get(report.localCandidateId);
+            if (local) candidateType = local.candidateType; // 'host' | 'srflx' | 'relay'
+          }
+        });
+        if (candidateType) console.log(`[voice] ${peerClientId}: media path = ${candidateType === 'relay' ? 'TURN relay' : candidateType === 'srflx' ? 'direct (STUN)' : 'direct (local)'}`);
+      } catch (e) { /* getStats can fail transiently mid-negotiation, non-fatal */ }
+    }
+    if (this.onPeerStateChange) this.onPeerStateChange(peerClientId, state, candidateType);
+  }
+
+
   _ensureLocalTrackOnAllPeers() {
     if (!this.localStream) return;
     const track = this.localStream.getAudioTracks()[0];

@@ -1,3 +1,8 @@
+// Loads a local .env file if present (see .env.example). On Render (or any
+// host that injects real environment variables directly), there's no .env
+// file to find, so this quietly does nothing there - safe either way.
+require('dotenv').config();
+
 const path = require('path');
 const express = require('express');
 const http = require('http');
@@ -5,6 +10,7 @@ const { Server } = require('socket.io');
 const RoomManager = require('./server/RoomManager');
 const { sanitizeWord } = require('./server/words');
 const { MAX_PLAYERS_PRIVATE } = require('./server/constants');
+const { getIceServers } = require('./server/turnCredentials');
 
 const app = express();
 const server = http.createServer(app);
@@ -32,6 +38,15 @@ app.get('/health', (req, res) => {
 
 app.get('/', (req, res) => {
   res.sendFile(path.join(__dirname, 'public', 'index.html'));
+});
+
+// TURN credentials for the voice-chat WebRTC mesh. Fetched server-side (so
+// any API key stays out of client JS) and proxied to the browser just
+// before it opens a peer connection. See server/turnCredentials.js for the
+// provider + fallback chain and how to enable it.
+app.get('/api/turn-credentials', async (req, res) => {
+  const { iceServers, expiresAt } = await getIceServers();
+  res.json({ iceServers, expiresAt });
 });
 
 io.on('connection', (socket) => {

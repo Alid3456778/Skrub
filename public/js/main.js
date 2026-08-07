@@ -157,6 +157,28 @@ function updateVoiceStatusUI(status) {
 voice.onStatusChange = updateVoiceStatusUI;
 updateVoiceStatusUI('off');
 
+// Per-peer connection quality: lets you actually SEE whether voice reached
+// each player, instead of guessing. Green = live P2P/relay audio path,
+// yellow = still negotiating, red = failed (commonly a NAT/network issue
+// the TURN relay couldn't route around). Also visible in the console as
+// "[voice] <clientId>: <state>".
+const peerVoiceStates = new Map();
+voice.onPeerStateChange = (peerClientId, state, candidateType) => {
+  peerVoiceStates.set(peerClientId, { state, candidateType });
+  if (roomState) renderRoomByPhase(roomState);
+};
+function voiceDotFor(playerId) {
+  if (playerId === clientId) return '';
+  const info = peerVoiceStates.get(playerId);
+  if (!info) return '';
+  const cls = (info.state === 'connected' || info.state === 'completed') ? 'good'
+    : (info.state === 'failed' || info.state === 'closed') ? 'bad' : 'pending';
+  const label = (info.state === 'connected' || info.state === 'completed')
+    ? `Voice connected${info.candidateType === 'relay' ? ' (via relay)' : ''}`
+    : (info.state === 'failed' ? 'Voice connection failed' : `Voice: ${info.state}`);
+  return `<span class="voice-dot ${cls}" title="${label}"></span>`;
+}
+
 voiceSetupBtn.addEventListener('click', async () => {
   voiceSetupBtn.disabled = true;
   voiceSetupStatus.textContent = 'Requesting microphone…';
@@ -367,7 +389,7 @@ function renderLobby(state) {
     const li = document.createElement('li');
     li.innerHTML = `<span class="avatar-chip ${p.id === state.hostId ? 'host' : ''}">${avatarSVG(p.avatar)}</span>
       <span class="name ${p.connected ? '' : 'offline'}">${escapeHtml(p.name)}${p.id === clientId ? ' (you)' : ''}</span>
-      <span class="mic-indicator" title="${p.voiceEnabled ? 'Voice chat on' : 'Voice chat off'}">${p.voiceEnabled ? '🎤' : ''}</span>`;
+      <span class="mic-indicator" title="${p.voiceEnabled ? 'Voice chat on' : 'Voice chat off'}">${p.voiceEnabled ? '🎤' : ''}</span>${voiceDotFor(p.id)}`;
     list.appendChild(li);
   });
 }
@@ -544,7 +566,7 @@ function renderGamePlayerList(state) {
     const tag = p.id === state.currentDrawerId ? ' ✏️' : (p.isSpectator ? ' (spectating)' : '');
     li.innerHTML = `<span class="avatar-chip ${p.id === state.hostId ? 'host' : ''}">${avatarSVG(p.avatar)}</span>
       <span class="name ${p.connected ? '' : 'offline'}">${escapeHtml(p.name)}${tag}</span>
-      <span class="mic-indicator" title="${p.voiceEnabled ? 'Voice chat on' : 'Voice chat off'}">${p.voiceEnabled ? '🎤' : ''}</span>
+      <span class="mic-indicator" title="${p.voiceEnabled ? 'Voice chat on' : 'Voice chat off'}">${p.voiceEnabled ? '🎤' : ''}</span>${voiceDotFor(p.id)}
       <span class="score">${p.score}</span>`;
     list.appendChild(li);
   });

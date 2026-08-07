@@ -9,3 +9,18 @@ services:
     envVars:
       - key: NODE_VERSION
         value: 20.11.0
+      # TURN credentials for voice chat (see server/turnCredentials.js).
+      # sync: false means Render will NOT store a value here in this file or
+      # in git - it prompts you to paste the value once in the Render
+      # dashboard (Environment tab) instead, so your API key never ends up
+      # committed to the repo. Leave both unset to run on the free public
+      # fallback TURN server; set them for reliable voice across real
+      # players' networks. Get free credentials at https://www.metered.ca/stun-turn
+      - key: METERED_APP_NAME
+        sync: false
+      - key: METERED_API_KEY
+        sync: false
+      # Optional - how long (in hours) the server caches TURN credentials
+      # before asking Metered for fresh ones. Defaults to 6 if unset.
+      - key: METERED_CACHE_HOURS
+        value: "6"
