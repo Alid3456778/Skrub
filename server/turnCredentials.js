@@ -56,10 +56,23 @@ const STATIC_FALLBACK_ICE_SERVERS = [
 ];
 
 const CACHE_TTL_MS = (Number(process.env.METERED_CACHE_HOURS) || 6) * 60 * 60 * 1000;
-let cache = { iceServers: null, expiresAt: 0 };
+let cache = { iceServers: null, expiresAt: 0, degraded: false, reason: null };
 let inflight = null; // de-dupes concurrent cache-miss requests into one Metered call
 let warnedOnce = false;
 
+// Returns { iceServers, reason } on success, or { iceServers: null, reason }
+// on failure. `reason` distinguishes WHY we're not using Metered, because
+// the client-facing UI treats these differently:
+//   'unconfigured' - METERED_APP_NAME/METERED_API_KEY were never set. This
+//     is an expected, non-alarming state (local dev, or before you've
+//     signed up) - the lobby should NOT show a scary warning for this.
+//   'unreachable'  - the env vars ARE set but the request to Metered still
+//     failed (timeout, non-2xx, empty response). This is the case worth
+//     surfacing to players, since it means a real deployment's TURN relay
+//     isn't working right now - possibly the free tier's monthly relay
+//     quota is used up, possibly a transient Metered outage. We can't
+//     distinguish those two from this API response alone, so the reason is
+//     reported honestly as "unreachable" rather than guessing which.
 async function fetchMeteredIceServers() {
   const appName = process.env.METERED_APP_NAME;
   const apiKey = process.env.METERED_API_KEY;
@@ -73,7 +86,7 @@ async function fetchMeteredIceServers() {
         'env vars for a much more reliable relay.'
       );
     }
-    return null;
+    return { iceServers: null, reason: 'unconfigured' };
   }
 
   const url = `https://${appName}.metered.live/api/v1/turn/credentials?apiKey=${encodeURIComponent(apiKey)}`;
@@ -85,16 +98,23 @@ async function fetchMeteredIceServers() {
     const iceServers = await response.json();
     if (!Array.isArray(iceServers) || iceServers.length === 0) throw new Error('Metered API returned no ICE servers');
     console.log(`[turn] Fetched fresh Metered TURN credentials, caching for ${(CACHE_TTL_MS / 3600000).toFixed(1)}h.`);
-    return iceServers;
+    return { iceServers, reason: null };
   } catch (err) {
-    console.warn('[turn] Metered credential fetch failed, using fallback TURN servers this request:', err.message);
-    return null;
+    console.warn(
+      '[turn] METERED_APP_NAME/METERED_API_KEY are set but the Metered API call failed - this ' +
+      'usually means either a transient outage or the free tier\'s monthly relay quota is used ' +
+      'up. Falling back to the shared Open Relay TURN server for now. Details:', err.message
+    );
+    return { iceServers: null, reason: 'unreachable' };
   } finally {
     clearTimeout(timeout);
   }
 }
 
-// Returns { iceServers, expiresAt } for RTCPeerConnection use. Cached in
+// Returns { iceServers, expiresAt, degraded, reason } for the client.
+// `degraded` is true whenever we're not using properly-configured Metered
+// credentials - the client uses this to decide whether to show players a
+// "voice may not connect across networks right now" notice. Cached in
 // memory between calls so we don't hit Metered's API on every single player
 // connection - only once per cache window per server process, no matter how
 // many players connect in that window. Concurrent cache-miss requests (e.g.
@@ -103,17 +123,17 @@ async function fetchMeteredIceServers() {
 // rather than each firing its own request.
 async function getIceServers() {
   if (cache.iceServers && Date.now() < cache.expiresAt) {
-    return { iceServers: cache.iceServers, expiresAt: cache.expiresAt };
+    return { iceServers: cache.iceServers, expiresAt: cache.expiresAt, degraded: cache.degraded, reason: cache.reason };
   }
 
   if (!inflight) {
     inflight = fetchMeteredIceServers().finally(() => { inflight = null; });
   }
-  const metered = await inflight;
+  const { iceServers: metered, reason } = await inflight;
 
   if (metered) {
-    cache = { iceServers: metered, expiresAt: Date.now() + CACHE_TTL_MS };
-    return { iceServers: metered, expiresAt: cache.expiresAt };
+    cache = { iceServers: metered, expiresAt: Date.now() + CACHE_TTL_MS, degraded: false, reason: null };
+    return { iceServers: metered, expiresAt: cache.expiresAt, degraded: false, reason: null };
   }
 
   // Don't cache the fallback for long - if Metered is configured but had a
@@ -121,8 +141,8 @@ async function getIceServers() {
   // weaker shared server for hours. Also tell the client (via expiresAt) not
   // to persist this one in localStorage for long either.
   const expiresAt = Date.now() + 60 * 1000;
-  cache = { iceServers: STATIC_FALLBACK_ICE_SERVERS, expiresAt };
-  return { iceServers: STATIC_FALLBACK_ICE_SERVERS, expiresAt };
+  cache = { iceServers: STATIC_FALLBACK_ICE_SERVERS, expiresAt, degraded: true, reason };
+  return { iceServers: STATIC_FALLBACK_ICE_SERVERS, expiresAt, degraded: true, reason };
 }
 
 module.exports = { getIceServers };

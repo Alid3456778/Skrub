@@ -10,7 +10,8 @@
     "test:voice": "node test/voice-signal.js",
     "test:quickplay": "node test/quick-play.js",
     "test:lounge": "node test/lounge-state.js",
-    "test:voice-cycle": "node test/voice-full-cycle.js"
+    "test:voice-cycle": "node test/voice-full-cycle.js",
+    "test:voice-relay": "node test/voice-relay-recheck.js"
   },
   "engines": {
     "node": ">=18.0.0"

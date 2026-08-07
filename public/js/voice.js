@@ -20,7 +20,7 @@
 // when *its* cache is expiring - see turnCredentials.js). Net effect: the
 // real Metered API gets called roughly once per cache window, total, no
 // matter how many players or page loads happen in that window.
-const LOCAL_CACHE_KEY = 'skrub_ice_servers_v1';
+const LOCAL_CACHE_KEY = 'skrub_ice_servers_v2';
 const EXPIRY_SAFETY_MARGIN_MS = 5 * 60 * 1000; // don't start a connection on creds expiring within 5 min
 
 const FALLBACK_ICE_SERVERS = [
@@ -35,42 +35,74 @@ function readLocalIceCache() {
     const parsed = JSON.parse(raw);
     if (!Array.isArray(parsed.iceServers) || !parsed.iceServers.length) return null;
     if (!parsed.expiresAt || Date.now() > parsed.expiresAt - EXPIRY_SAFETY_MARGIN_MS) return null; // expired or expiring soon
-    return parsed.iceServers;
+    return parsed;
   } catch (e) {
     return null; // corrupt/unavailable localStorage - just refetch
   }
 }
 
-function writeLocalIceCache(iceServers, expiresAt) {
+function writeLocalIceCache(data) {
   try {
-    localStorage.setItem(LOCAL_CACHE_KEY, JSON.stringify({ iceServers, expiresAt }));
+    localStorage.setItem(LOCAL_CACHE_KEY, JSON.stringify(data));
   } catch (e) { /* localStorage full/unavailable (e.g. private browsing) - non-fatal, just skip caching */ }
 }
 
-let iceServersPromise = null;
-function getIceServers() {
+// Fetches (or reuses the cached) { iceServers, degraded, reason } from our
+// server. `degraded` + `reason` let the UI tell players WHY voice might not
+// connect across networks right now - see server/turnCredentials.js for
+// what each reason means. Shared by getIceServers() (used to actually open
+// peer connections) and getRelayStatus() (used by the lobby UI), so both
+// come from the same single fetch/cache, not two separate ones.
+let iceDataPromise = null;
+function getIceData() {
   const cached = readLocalIceCache();
   if (cached) return Promise.resolve(cached);
 
-  if (!iceServersPromise) {
-    iceServersPromise = fetch('/api/turn-credentials')
+  if (!iceDataPromise) {
+    iceDataPromise = fetch('/api/turn-credentials')
       .then(r => r.json())
       .then(data => {
-        const servers = (Array.isArray(data.iceServers) && data.iceServers.length) ? data.iceServers : FALLBACK_ICE_SERVERS;
-        if (data.expiresAt) writeLocalIceCache(servers, data.expiresAt);
-        return servers;
+        const result = {
+          iceServers: (Array.isArray(data.iceServers) && data.iceServers.length) ? data.iceServers : FALLBACK_ICE_SERVERS,
+          degraded: !!data.degraded,
+          reason: data.reason || null
+        };
+        if (data.expiresAt) writeLocalIceCache({ ...result, expiresAt: data.expiresAt });
+        return result;
       })
       .catch(err => {
         console.warn('[voice] Could not fetch TURN credentials, using STUN-only fallback (will fail across strict NATs):', err.message);
-        return FALLBACK_ICE_SERVERS;
+        return { iceServers: FALLBACK_ICE_SERVERS, degraded: true, reason: 'client_fetch_failed' };
       });
   }
-  return iceServersPromise;
+  return iceDataPromise;
+}
+
+function getIceServers() {
+  return getIceData().then(d => d.iceServers);
+}
+
+// Used by the lobby UI to decide whether to show a "voice may not connect
+// across networks right now" notice. Safe to call at any time, independent
+// of whether voice chat has been enabled yet - it triggers/reuses the same
+// cached fetch as getIceServers().
+export function getRelayStatus() {
+  return getIceData().then(d => ({ degraded: d.degraded, reason: d.reason }));
 }
 
 // How long a connection can sit unconnected before we consider it stuck and
 // worth tearing down + retrying from scratch.
 const STUCK_CONNECTION_MS = 8000;
+
+// How long to wait after landing on a TURN-relayed path before trying to
+// escape it, and how many times to try before giving up for the rest of
+// this connection's lifetime (these connections live for a whole game, not
+// just one round, so conditions genuinely can change mid-session - a wifi
+// hop, a NAT re-mapping, etc). Capped so a pair that will always need
+// relay (e.g. both behind symmetric NAT) doesn't retry forever for no
+// benefit.
+const RELAY_RECHECK_INTERVAL_MS = 45000;
+const RELAY_RECHECK_MAX_ATTEMPTS = 4;
 
 export class VoiceMesh {
   constructor(socket, myClientId) {
@@ -79,6 +111,8 @@ export class VoiceMesh {
     this.peers = new Map();          // clientId -> RTCPeerConnection
     this.senders = new Map();        // clientId -> RTCRtpSender (audio)
     this.createdAt = new Map();      // clientId -> timestamp, for stuck-connection detection
+    this.relayRecheckTimers = new Map();   // clientId -> setTimeout handle
+    this.relayRecheckAttempts = new Map(); // clientId -> number of upgrade attempts so far
     this.pendingCandidates = new Map(); // clientId -> [candidate, ...] received before remote description was set
     this.localStream = null;
     this.enabled = false;
@@ -145,7 +179,61 @@ export class VoiceMesh {
     this.senders.delete(peerClientId);
     this.createdAt.delete(peerClientId);
     this.pendingCandidates.delete(peerClientId);
+    this._clearRelayRecheck(peerClientId);
     if (this.onPeerStateChange) this.onPeerStateChange(peerClientId, 'closed', null);
+  }
+
+  _clearRelayRecheck(peerClientId) {
+    const timer = this.relayRecheckTimers.get(peerClientId);
+    if (timer) clearTimeout(timer);
+    this.relayRecheckTimers.delete(peerClientId);
+    this.relayRecheckAttempts.delete(peerClientId);
+  }
+
+  // Called whenever we learn a peer's current path is via TURN relay.
+  // Schedules a later attempt to renegotiate and see if a direct path has
+  // become available (network changed, NAT re-mapped, etc), so a pair
+  // isn't stuck paying relay cost for an entire game if conditions improve
+  // partway through. Capped at RELAY_RECHECK_MAX_ATTEMPTS - if it's still
+  // relay after that many tries, it's genuinely stuck (e.g. symmetric NAT
+  // on both sides) and further attempts would just waste effort.
+  //
+  // SAFETY: a renegotiation briefly touches the connection and, even though
+  // browsers implement ICE restarts to be as seamless as possible, a short
+  // audio hiccup during the handover isn't something we can 100% rule out.
+  // Rather than trust "probably fine", this only ever fires while
+  // _canSendTo(peerClientId) is false for THIS pair - i.e. they're already
+  // muted to each other right now (mid-round, not both in the drawing-phase
+  // lounge together). No live audio can be flowing in that moment, so even
+  // a worst-case hiccup is a glitch on silence - inaudible, by construction.
+  // If they're currently allowed to hear each other (open lobby/review/
+  // word-select chat, or both in the lounge together), the check defers
+  // itself without spending one of the limited attempts, and simply tries
+  // again later once this pair is muted again.
+  _scheduleRelayRecheck(peerClientId, pc) {
+    if (this.relayRecheckTimers.has(peerClientId)) return; // already scheduled
+    const attempts = this.relayRecheckAttempts.get(peerClientId) || 0;
+    if (attempts >= RELAY_RECHECK_MAX_ATTEMPTS) return;
+
+    const timer = setTimeout(async () => {
+      this.relayRecheckTimers.delete(peerClientId);
+      if (!this.peers.has(peerClientId)) return; // connection was torn down while we waited
+      if (pc.iceConnectionState !== 'connected' && pc.iceConnectionState !== 'completed') return; // let the disconnect/failed handler deal with it instead
+
+      if (this._canSendTo(peerClientId)) {
+        // This pair can currently hear each other - never touch a live
+        // connection. Defer without spending an attempt; re-check later
+        // once they're muted again (e.g. the round moves on).
+        console.log(`[voice] ${peerClientId}: still on TURN relay, but this pair can talk right now - deferring the reconnect attempt until they're muted again`);
+        this._scheduleRelayRecheck(peerClientId, pc);
+        return;
+      }
+
+      this.relayRecheckAttempts.set(peerClientId, attempts + 1);
+      console.log(`[voice] ${peerClientId}: still on TURN relay, attempting to renegotiate a direct path (try ${attempts + 1}/${RELAY_RECHECK_MAX_ATTEMPTS})`);
+      await this._renegotiate(peerClientId, pc, { iceRestart: true });
+    }, RELAY_RECHECK_INTERVAL_MS);
+    this.relayRecheckTimers.set(peerClientId, timer);
   }
 
   async _openConnection(peerClientId, isInitiator) {
@@ -222,6 +310,18 @@ export class VoiceMesh {
         });
         if (candidateType) console.log(`[voice] ${peerClientId}: media path = ${candidateType === 'relay' ? 'TURN relay' : candidateType === 'srflx' ? 'direct (STUN)' : 'direct (local)'}`);
       } catch (e) { /* getStats can fail transiently mid-negotiation, non-fatal */ }
+
+      // Escape-TURN logic: still on relay -> queue a later retry. Landed on
+      // a direct path (possibly after a retry succeeded) -> stop retrying,
+      // there's nothing left to save.
+      if (candidateType === 'relay') {
+        this._scheduleRelayRecheck(peerClientId, pc);
+      } else if (candidateType) {
+        if (this.relayRecheckAttempts.get(peerClientId)) {
+          console.log(`[voice] ${peerClientId}: upgraded off TURN relay to a direct path.`);
+        }
+        this._clearRelayRecheck(peerClientId);
+      }
     }
     if (this.onPeerStateChange) this.onPeerStateChange(peerClientId, state, candidateType);
   }

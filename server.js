@@ -45,8 +45,8 @@ app.get('/', (req, res) => {
 // before it opens a peer connection. See server/turnCredentials.js for the
 // provider + fallback chain and how to enable it.
 app.get('/api/turn-credentials', async (req, res) => {
-  const { iceServers, expiresAt } = await getIceServers();
-  res.json({ iceServers, expiresAt });
+  const { iceServers, expiresAt, degraded, reason } = await getIceServers();
+  res.json({ iceServers, expiresAt, degraded, reason });
 });
 
 io.on('connection', (socket) => {

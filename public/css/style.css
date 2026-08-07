@@ -167,6 +167,72 @@ textarea { min-height: 60px; resize: vertical; }
 
 .error-text { color: var(--bad); margin-top: 8px; font-size: 0.85rem; font-weight: 700; }
 .muted { color: var(--muted); font-size: 0.9rem; }
+.how-to-play-btn { width: 100%; margin-top: 8px; background: var(--panel-light); }
+
+/* ---------- How to Play modal ---------- */
+.modal-backdrop {
+  position: fixed; inset: 0; z-index: 1000;
+  background: rgba(20, 21, 45, 0.72);
+  display: flex; align-items: center; justify-content: center;
+  padding: 20px;
+}
+.modal-card {
+  background: var(--panel); color: var(--text);
+  border-radius: 20px; border: 3px solid var(--line);
+  width: 100%; max-width: 560px; max-height: 85vh;
+  display: flex; flex-direction: column;
+  box-shadow: 0 10px 0 rgba(0,0,0,0.25), 0 18px 40px rgba(0,0,0,0.4);
+}
+.modal-header {
+  display: flex; align-items: center; justify-content: space-between;
+  padding: 18px 20px 12px; border-bottom: 2px solid #eceefa; flex-shrink: 0;
+}
+.modal-header h2 { margin: 0; font-size: 1.3rem; }
+.modal-close {
+  border: none; background: none; font-size: 1.6rem; line-height: 1; cursor: pointer;
+  color: var(--muted); padding: 0 4px;
+}
+.modal-close:hover { color: var(--text); }
+.modal-body { padding: 6px 20px 4px; overflow-y: auto; }
+.rules-section { margin: 16px 0; }
+.rules-section h3 { margin: 0 0 6px; font-size: 1.05rem; }
+.rules-section p, .rules-section li { font-size: 0.92rem; line-height: 1.5; color: var(--text); }
+.rules-section ul { margin: 6px 0; padding-left: 20px; }
+.rules-section li { margin-bottom: 4px; }
+.modal-footer { padding: 14px 20px 20px; flex-shrink: 0; }
+.modal-footer .btn { margin-top: 0; }
+
+/* ---------- Toast notifications ---------- */
+.toast-container {
+  position: fixed; top: 16px; right: 16px; z-index: 1100;
+  display: flex; flex-direction: column; gap: 10px;
+  max-width: min(360px, calc(100vw - 32px));
+}
+.toast {
+  background: var(--panel); color: var(--text);
+  border: 2.5px solid var(--line); border-radius: 14px;
+  padding: 12px 14px; box-shadow: 0 5px 0 rgba(0,0,0,0.2);
+  display: flex; align-items: flex-start; gap: 8px;
+  font-size: 0.85rem; font-weight: 700; line-height: 1.4;
+  animation: toast-in 0.2s ease-out;
+}
+.toast-warn { border-color: var(--warn); background: #fff8e8; }
+.toast-msg { flex: 1; }
+.toast-close {
+  border: none; background: none; font-size: 1.2rem; line-height: 1; cursor: pointer;
+  color: var(--muted); flex-shrink: 0;
+}
+.toast-close:hover { color: var(--text); }
+.toast-out { animation: toast-out 0.2s ease-in forwards; }
+@keyframes toast-in { from { opacity: 0; transform: translateX(24px); } to { opacity: 1; transform: translateX(0); } }
+@keyframes toast-out { from { opacity: 1; transform: translateX(0); } to { opacity: 0; transform: translateX(24px); } }
+
+/* ---------- Lobby TURN-degraded banner ---------- */
+.degraded-banner {
+  background: #fff3d6; border: 2.5px solid var(--warn); border-radius: 12px;
+  padding: 10px 12px; margin: 4px 0 12px; font-size: 0.85rem; font-weight: 700;
+  color: #5c3d00; line-height: 1.4;
+}
 
 /* ---------- Avatar chips (used everywhere else) ---------- */
 .avatar-chip { width: 30px; height: 30px; flex-shrink: 0; border-radius: 50%; overflow: hidden; }
@@ -212,6 +278,25 @@ textarea { min-height: 60px; resize: vertical; }
   background: var(--warn); color: #402800;
   text-align: center; padding: 8px; font-size: 0.85rem; font-weight: 700; z-index: 999;
 }
+
+.discord-fab {
+  position: fixed; top: 14px; left: 14px; z-index: 950;
+  width: 42px; height: 42px; border-radius: 50%;
+  background: #5865F2; border: 2.5px solid var(--line);
+  display: flex; align-items: center; justify-content: center;
+  box-shadow: 0 3px 0 rgba(0,0,0,0.25);
+  text-decoration: none;
+  transition: transform 0.12s ease, box-shadow 0.12s ease;
+}
+.discord-fab:hover { background: #4752c4; transform: translateY(-1px); box-shadow: 0 4px 0 rgba(0,0,0,0.25); }
+.discord-fab:active { transform: translateY(2px); box-shadow: 0 1px 0 rgba(0,0,0,0.25); }
+
+.discord-link-btn {
+  display: inline-flex; align-items: center; width: auto;
+  background: #5865F2; color: #fff; border-color: var(--line);
+  padding: 10px 18px; margin-top: 4px;
+}
+.discord-link-btn:hover { background: #4752c4; }
 
 .game-layout { width: 100%; max-width: 1200px; margin: 0 auto; padding: 10px; }
 

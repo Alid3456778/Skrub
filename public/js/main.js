@@ -1,6 +1,6 @@
 import { DrawingCanvas, PALETTE } from './canvas.js';
 import { startPingIndicator } from './ping.js';
-import { VoiceMesh } from './voice.js';
+import { VoiceMesh, getRelayStatus } from './voice.js';
 import { avatarSVG, defaultAvatar, randomAvatar, nearestComboIndex, comboByIndex, COMBO_COUNT } from './avatar.js';
 
 const WORD_SELECT_TOTAL_MS = 15000;
@@ -55,6 +55,55 @@ $('avatar-dice').addEventListener('click', () => {
   saveProfile();
 });
 $('input-name').addEventListener('input', () => { profile.name = $('input-name').value.trim(); saveProfile(); });
+
+// ---------- Toasts (top-right notifications) ----------
+function showToast(message, { durationMs = 9000, tone = 'info' } = {}) {
+  const container = $('toast-container');
+  const toast = document.createElement('div');
+  toast.className = `toast toast-${tone}`;
+  toast.innerHTML = `<span class="toast-msg">${message}</span><button class="toast-close" aria-label="Dismiss">&times;</button>`;
+  const remove = () => { toast.classList.add('toast-out'); setTimeout(() => toast.remove(), 200); };
+  toast.querySelector('.toast-close').addEventListener('click', remove);
+  if (durationMs) setTimeout(remove, durationMs);
+  container.appendChild(toast);
+}
+
+// ---------- Rulebook / How to Play modal ----------
+const rulesModal = $('rules-modal');
+function openRulesModal() { rulesModal.classList.remove('hidden'); }
+function closeRulesModal() { rulesModal.classList.add('hidden'); localStorage.setItem('skrub_seen_rules', '1'); }
+$('btn-how-to-play').addEventListener('click', openRulesModal);
+$('btn-close-rules').addEventListener('click', closeRulesModal);
+$('btn-rules-got-it').addEventListener('click', closeRulesModal);
+rulesModal.addEventListener('click', (e) => { if (e.target === rulesModal) closeRulesModal(); });
+if (!localStorage.getItem('skrub_seen_rules')) openRulesModal();
+
+// ---------- Lobby one-time notices: Wi-Fi tip + TURN relay health ----------
+// Shown once per lobby visit (reset when leaving back to the home screen),
+// not on every room-update - joining/other players triggering re-renders
+// shouldn't re-spam these.
+let lobbyNoticesShown = false;
+function resetLobbyNotices() { lobbyNoticesShown = false; }
+async function showLobbyNoticesOnce() {
+  if (lobbyNoticesShown) return;
+  lobbyNoticesShown = true;
+
+  showToast('📶 For the smoothest mic experience, try connecting to Wi-Fi rather than mobile data.', { tone: 'info' });
+
+  const { degraded, reason } = await getRelayStatus();
+  const banner = $('voice-degraded-banner');
+  if (degraded && reason !== 'unconfigured') {
+    // 'unconfigured' just means the developer hasn't set up TURN credentials
+    // yet (e.g. local dev) - not worth alarming players over. Any other
+    // reason means TURN was configured but isn't reachable right now -
+    // genuinely worth telling players about, since voice may not connect
+    // between different networks until it's back.
+    banner.innerHTML = '⚠️ Voice relay service isn\'t reachable right now (the free TURN quota may be used up for this month) — the developer needs to top it up. Until then, voice chat mainly works when everyone is on the <strong>same Wi-Fi network</strong>.';
+    banner.classList.remove('hidden');
+  } else {
+    banner.classList.add('hidden');
+  }
+}
 
 function requireName() {
   if (!profile.name) {
@@ -257,6 +306,7 @@ function leaveRoom() {
   updateVoiceStatusUI('off');
   $('chat-log').innerHTML = '';
   $('home-error').classList.add('hidden');
+  resetLobbyNotices();
   showScreen('home');
 }
 $('btn-leave-lobby').addEventListener('click', leaveRoom);
@@ -367,6 +417,7 @@ socket.on('action-error', ({ message }) => {
 });
 
 function renderLobby(state) {
+  showLobbyNoticesOnce();
   $('lobby-room-code').textContent = state.isPublic ? 'Public match' : state.roomId;
   const isHost = state.hostId === clientId;
   $('lobby-settings').classList.toggle('hidden', !isHost || state.isPublic);
